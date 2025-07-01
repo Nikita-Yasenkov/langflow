@@ -6,24 +6,63 @@ services:
       - "7860:7860"
     depends_on:
       - postgres
+      - redis
     environment:
-      - LANGFLOW_DATABASE_URL=postgresql://langflow:langflow@postgres:5432/langflow
       # This variable defines where the logs, file storage, monitor data and secret keys are stored.
       - LANGFLOW_CONFIG_DIR=app/langflow
+    env_file:
+      - .env
     volumes:
       - langflow-data:/app/langflow
+  
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - langflow-redis:/data
 
   postgres:
     image: postgres:16
-    environment:
-      POSTGRES_USER: langflow
-      POSTGRES_PASSWORD: langflow
-      POSTGRES_DB: langflow
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
       - langflow-postgres:/var/lib/postgresql/data
-
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./certs:/etc/nginx/certs
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    environment:
+      - HTTPS_METHOD=redirect
+    networks:
+      - nginx-proxy
+  letsencrypt:
+    image: nginxproxy/acme-companion
+    container_name: nginx-proxy-acme
+    env_file:
+      - .env
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/etc/nginx/certs
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    networks:
+      - nginx-proxy
 volumes:
   langflow-postgres:
   langflow-data:
+  langflow-redis:
+networks:
+  nginx-proxy:
+    external: true
